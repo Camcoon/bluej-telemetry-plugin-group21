@@ -1,0 +1,7 @@
+target/
+*.log
+.idea/
+.vscode/
+*.iml
+Telemetry-Report/
+.DS_Store
