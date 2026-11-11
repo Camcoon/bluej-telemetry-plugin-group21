@@ -1,4 +1,4 @@
-# BlueJ Telemetry Plugin — Group 21 (v1.0.3)
+# BlueJ Telemetry Plugin — Group 21
 
 **UWI COMP 3607 Object Oriented Programming II — 2026/2027 Semester 1**
 
