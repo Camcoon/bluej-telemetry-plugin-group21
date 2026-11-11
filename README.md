@@ -60,12 +60,6 @@ Full exports also create timestamped backups under `<user-home>/.bluej-telemetry
 - A configured gate is not an actual passing coverage measurement: check `mvn clean verify` and `target/site/jacoco/index.html`.
 - No GitHub Actions run has been verified for the audited main branch. BlueJ startup and real IDE behavior must be demonstrated separately.
 
-## Documentation and demonstrations
-
-See `docs/TEST_AND_DEMO_CHECKLIST.md` for the acceptance test matrix and `docs/WIKI_STARTER.md` for proposed GitHub Wiki pages. The repository's Wiki feature must be enabled **and** populated with actual pages; enabling it alone is not sufficient.
-
-The demo should show **three reproducible scenarios**: fully correct program, partially correct program (e.g., compile failure then correction), and completely incorrect program (e.g., compile failure), and the resulting files. Verify that all displayed counts match the tested interactions.
-
 ## Project documentation and sources
 
 - [BlueJ Extensions API and installation documentation](https://www.bluej.org/extensions/writingextensions2.html)
