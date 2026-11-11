@@ -269,8 +269,11 @@ public final class TelemetryExtension extends Extension implements PackageListen
     @Override public String getVersion() { return "1.0.3"; }
     @Override public String getDescription() { return "Collect estimated editor activity and BlueJ lifecycle, compile and run events."; }
     @Override public URL getURL() {
-        try { return new URL("https://github.com/The-Objectors/Fukurou"); }
-        catch (Exception ignored) { return null; }
+        try {
+            return new URL("https://github.com/Locktus/bluej-telemetry-plugin-group21");
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static final class ExportMenu extends MenuGenerator {
