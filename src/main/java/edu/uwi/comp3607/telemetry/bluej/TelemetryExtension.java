@@ -270,7 +270,7 @@ public final class TelemetryExtension extends Extension implements PackageListen
     @Override public String getDescription() { return "Collect estimated editor activity and BlueJ lifecycle, compile and run events."; }
     @Override public URL getURL() {
         try {
-            return new URL("https://github.com/Locktus/bluej-telemetry-plugin-group21");
+            return new URL("https://github.com/Camcoon/bluej-telemetry-plugin-group21");
         } catch (Exception ignored) {
             return null;
         }
