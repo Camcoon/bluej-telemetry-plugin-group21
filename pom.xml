@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>edu.uwi.comp3607</groupId>
   <artifactId>bluej-telemetry-plugin</artifactId>
-  <version>1.0.3</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
   <name>BlueJ Telemetry Plugin</name>
   <properties>

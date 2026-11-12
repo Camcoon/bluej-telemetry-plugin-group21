@@ -266,7 +266,7 @@ public final class TelemetryExtension extends Extension implements PackageListen
     }
     @Override public boolean isCompatible() { return getExtensionsAPIVersionMajor() >= 3; }
     @Override public String getName() { return "BlueJ Telemetry"; }
-    @Override public String getVersion() { return "1.0.3"; }
+    @Override public String getVersion() { return "1.0.0"; }
     @Override public String getDescription() { return "Collect estimated editor activity and BlueJ lifecycle, compile and run events."; }
     @Override public URL getURL() {
         try {

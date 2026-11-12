@@ -13,20 +13,24 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TelemetrySession {
+
     private static final class ProjectInfo {
         final Set<String> openPackages = new LinkedHashSet<>();
         final Set<String> knownClasses = new LinkedHashSet<>();
         final Map<String,Integer> methods = new HashMap<>();
         boolean everOpened;
     }
+
     private static final class EditorInfo {
         int length;
         Integer words;
         EditorInfo(int length, Integer words) { this.length = length; this.words = words; }
     }
+
     private static final class Compilation {
         boolean sawFirstError, sawFirstWarning;
     }
+
 
     private final String sessionId;
     private final Instant startedAt;
@@ -42,7 +46,9 @@ public final class TelemetrySession {
     private String studentId;
     private Instant endedAt;
 
-    public TelemetrySession(Instant startedAt) { this(UUID.randomUUID().toString(), startedAt); }
+    public TelemetrySession(Instant startedAt) {
+        this(UUID.randomUUID().toString(), startedAt); }
+
     public TelemetrySession(String sessionId, Instant startedAt) {
         this.sessionId = sessionId;
         this.startedAt = startedAt;
@@ -50,12 +56,19 @@ public final class TelemetrySession {
         observers.add(analytics);
     }
 
-    public String sessionId() { return sessionId; }
-    public void addObserver(EventObserver observer) { observers.add(observer); }
+    public String sessionId() {
+        return sessionId; }
+
+    public void addObserver(EventObserver observer) {
+        observers.add(observer); }
+
     public void setStudentId(String value) {
         studentId = value == null || value.isBlank() ? null : value.trim();
     }
-    public String studentId() { return studentId; }
+
+    public String studentId() {
+        return studentId; }
+
     public List<Path> projectDirectories() {
         return projects.keySet().stream().map(Path::of).toList();
     }

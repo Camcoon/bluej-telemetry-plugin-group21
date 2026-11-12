@@ -42,8 +42,13 @@ public final class AnalyticsObserver implements EventObserver {
     public int compileFailed() { return compileFailed; }
     public int errors() { return errors; }
     public int warnings() { return warnings; }
-    public Map<String, Integer> errorsByCategory() { return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(errorsByCategory)); }
-    public Map<String, Integer> executionOutcomes() { return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(executionOutcomes)); }
+
+    public Map<String, Integer> errorsByCategory() {
+        return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(errorsByCategory)); }
+
+    public Map<String, Integer> executionOutcomes() {
+        return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(executionOutcomes)); }
+
     public double successRate() {
         int completed = compileSucceeded + compileFailed;
         return completed == 0 ? 0.0 : compileSucceeded * 100.0 / completed;

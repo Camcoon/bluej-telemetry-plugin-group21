@@ -9,7 +9,9 @@ public final class IdleTracker {
     private Instant lastActivity;
     private long completedIdleMillis;
 
-    public IdleTracker(Instant start) { this.start = start; this.lastActivity = start; }
+    public IdleTracker(Instant start) {
+        this.start = start;
+        this.lastActivity = start; }
 
     public void activity(Instant at) {
         if (at.isBefore(lastActivity)) return;
@@ -24,8 +26,12 @@ public final class IdleTracker {
         return Math.min(total, Math.max(0L, Duration.between(start, at).toMillis()));
     }
 
-    public long durationMillis(Instant at) { return Math.max(0L, Duration.between(start, at).toMillis()); }
-    public long activeMillis(Instant at) { return durationMillis(at) - idleMillis(at); }
+    public long durationMillis(Instant at) {
+        return Math.max(0L, Duration.between(start, at).toMillis()); }
+
+    public long activeMillis(Instant at) {
+        return durationMillis(at) - idleMillis(at); }
+
     public boolean isNonIdle(Instant at) {
         return Math.max(0L, Duration.between(lastActivity, at).toMillis()) < THRESHOLD_MS;
     }

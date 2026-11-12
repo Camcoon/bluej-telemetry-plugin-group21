@@ -93,11 +93,11 @@ class TelemetryCoreTest {
     @Test void editorLengthChangesAreOnlyApproximateAndWordSamplesStayNonIdle() {
         TelemetrySession s = new TelemetrySession(START);
         String project = "/tmp/Hello";
-        s.editorSample(project, "Hello", 100, 20, after(0)); // baseline
-        s.editorSample(project, "Hello", 100, null, after(30)); // same-length edits invisible
+        s.editorSample(project, "Hello", 100, 20, after(0));
+        s.editorSample(project, "Hello", 100, null, after(30));
         s.editorSample(project, "Hello", 110, 25, after(60));
         s.editorSample(project, "Hello", 115, 30, after(90));
-        s.editorSample(project, "Hello", 115, 45, after(400)); // idle: discard positive delta
+        s.editorSample(project, "Hello", 115, 45, after(400));
         SessionSnapshot snap = s.snapshot(after(400));
         assertEquals(10, snap.estimatedNewWords);
         assertEquals(2, snap.editsPerFiveMinuteWindow.get("0").intValue());

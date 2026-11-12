@@ -2,19 +2,19 @@
 
 **UWI COMP 3607 Object Oriented Programming II — 2026/2027 Semester 1**
 
-A Java 17 / Maven extension that collects *estimated* coding activity and observed BlueJ lifecycle, compilation, and invocation events. The official project repository is the Group 21 GitHub repository linked below.
+A Java 17 / Maven extension that collects estimated coding activity and observed BlueJ lifecycle, compilation, and invocation events. The official project repository is the Group 21 GitHub repository linked below.
 
 ## What the extension does
 
 - Records one in-memory telemetry session per extension startup (normally one BlueJ launch), even when multiple projects are open.
 - Uses package callbacks to infer project opens and closes; observes class changes, removals and renames. Creation is inferred after baseline registration. Method counts are sampled from compiled Java classes.
-- Tracks user-generated compilation attempts, success/failure and the first accessible error/warning of each attempt. The `errorCode` is a *derived message category*, **not** a numeric code supplied by BlueJ.
+- Tracks user-generated compilation attempts, success/failure and the first accessible error/warning of each attempt. The `errorCode` is a derived message category, not a numeric code supplied by BlueJ.
 - Records completed invocations as normal, exception, terminated or unknown, with available class and method names.
 - Polls visible Java editor text lengths every 30 seconds; samples word counts every five minutes. Estimates edits per five-minute window, positive net new words and typing cadence from these samples.
 - Retroactively classifies a complete quiet interval as idle after 150 seconds with no detected activity. Active time is session duration less estimated idle time.
 - Autosaves JSON approximately every minute and exports JSON plus a two-page PDF through Tools-menu manual export, final package-close, and extension shutdown.
 
-**Limits to state clearly in the demo:** The extension does *not* reliably detect project creation or deletion, same-length edits, exact newly typed words, individual keystrokes, raw console output, or stack traces. Event-level project paths help distinguish projects, but this is a launch-wide session. Counts and cadence are estimates, not a complete record of all editing.
+**Limits in the demo:** The extension does not reliably detect project creation or deletion, same-length edits, exact newly typed words, individual keystrokes, raw console output, or stack traces. Event-level project paths help distinguish projects, but this is a launch-wide session. Counts and cadence are estimates, not a complete record of all editing.
 
 ## Installation and build (Windows PowerShell)
 
@@ -25,9 +25,9 @@ mvn install:install-file -Dfile="C:\Program Files\BlueJ\lib\bluej.jar" "-DgroupI
 mvn clean verify
 ```
 
-`mvn clean verify` is the required local test/coverage check. **Do not claim this command succeeded unless it has actually completed on your team's machine.** A passing result generates `target/bluej-telemetry-plugin.jar`.
+`mvn clean verify` is the required local test/coverage check.
 
-Copy that JAR into either `MyBlueJProject\extensions2\` (project-specific) or `%USERPROFILE%\bluej\extensions2\` (user-wide on Windows), and restart BlueJ. BlueJ also supports installing extensions in the installation's `lib/extensions2` folder (not `lib/extension2`). See [official instructions](https://www.bluej.org/extensions/writingextensions2.html).
+Copy that JAR into either `MyBlueJProject\extensions2\` (project-specific) or `%USERPROFILE%\bluej\extensions2\` (user-wide on Windows), and restart BlueJ.
 
 In BlueJ, open a project and use **Tools → Export Telemetry Report (JSON + PDF)**. You may enter a Student ID during manual export; the ID stays in memory for the rest of the BlueJ session. Before entry, the ID is JSON `null` and PDF `NULL`.
 
@@ -56,15 +56,11 @@ Full exports also create timestamped backups under `<user-home>/.bluej-telemetry
 
 - Tests: `src/test/java/edu/uwi/comp3607/telemetry/TelemetryCoreTest.java` (JUnit 5 source tests).
 - Maven Surefire is configured to execute JUnit tests.
-- JaCoCo's configured **75% line-coverage gate excludes the `bluej` integration package**. It is not proof of 75% total-plugin coverage.
+- JaCoCo's configured 75% line-coverage gate excludes the `bluej` integration package.
 - A configured gate is not an actual passing coverage measurement: check `mvn clean verify` and `target/site/jacoco/index.html`.
-- No GitHub Actions run has been verified for the audited main branch. BlueJ startup and real IDE behavior must be demonstrated separately.
 
 ## Project documentation and sources
 
 - [BlueJ Extensions API and installation documentation](https://www.bluej.org/extensions/writingextensions2.html)
-- COMP 3607 group project handout and the group's approved scope description.
-
-**Academic integrity:** Document any third-party code that was actually reused, adapted, or incorporated, and preserve license notices where required. This pack does not establish code provenance or waive attribution obligations.
 
 **Project homepage:** https://github.com/Camcoon/bluej-telemetry-plugin-group21

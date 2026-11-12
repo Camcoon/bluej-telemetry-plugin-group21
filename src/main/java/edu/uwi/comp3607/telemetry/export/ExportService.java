@@ -16,6 +16,7 @@ public final class ExportService {
     public ExportService() {
         this(Path.of(System.getProperty("user.home"), ".bluej-telemetry", "backups"));
     }
+
     public ExportService(Path backupRoot) { this.backupRoot = backupRoot; }
 
     public Path exportJsonAutosave(SessionSnapshot snapshot, Path projectDir) throws IOException {
