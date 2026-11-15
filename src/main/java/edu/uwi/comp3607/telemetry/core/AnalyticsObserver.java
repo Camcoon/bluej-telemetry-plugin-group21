@@ -9,6 +9,8 @@ public final class AnalyticsObserver implements EventObserver {
     private int compileFailed;
     private int errors;
     private int warnings;
+    private int firstErrors;
+    private int firstWarnings;
     private final Map<String, Integer> errorsByCategory = new LinkedHashMap<>();
     private final Map<String, Integer> executionOutcomes = new LinkedHashMap<>();
 
@@ -18,17 +20,25 @@ public final class AnalyticsObserver implements EventObserver {
         }
     }
 
-    @Override public void onEvent(TelemetryEvent event) {
+@Override public void onEvent(TelemetryEvent event) {
         switch (event.type()) {
             case "COMPILE_STARTED" -> compileAttempts++;
             case "COMPILE_SUCCEEDED" -> compileSucceeded++;
             case "COMPILE_FAILED" -> compileFailed++;
             case "COMPILE_ERROR" -> {
                 errors++;
+                if (!Boolean.FALSE.equals(event.details().get("firstInAttempt"))) {
+                    firstErrors++;
+                }
                 String code = String.valueOf(event.details().getOrDefault("errorCode", "OTHER"));
                 errorsByCategory.merge(code, 1, Integer::sum);
             }
-            case "COMPILE_WARNING" -> warnings++;
+            case "COMPILE_WARNING" -> {
+                warnings++;
+                if (!Boolean.FALSE.equals(event.details().get("firstInAttempt"))) {
+                    firstWarnings++;
+                }
+            }
             case "EXECUTION_FINISHED" -> {
                 String kind = String.valueOf(event.details().getOrDefault("outcome", "UNKNOWN"));
                 executionOutcomes.merge(kind, 1, Integer::sum);
@@ -42,7 +52,9 @@ public final class AnalyticsObserver implements EventObserver {
     public int compileFailed() { return compileFailed; }
     public int errors() { return errors; }
     public int warnings() { return warnings; }
-
+    public int firstErrors() { return firstErrors; }
+    public int firstWarnings() { return firstWarnings; }
+    
     public Map<String, Integer> errorsByCategory() {
         return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(errorsByCategory)); }
 
