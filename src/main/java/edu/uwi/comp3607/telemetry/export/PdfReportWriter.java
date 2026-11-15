@@ -53,15 +53,17 @@ public final class PdfReportWriter implements ReportWriter {
         p.rect(34, y - 25, 527 * activeFraction, 14, CYAN);
         p.text(34, y - 41, 8, false, "Quiet spans >= 150 s are classified entirely idle, retroactively.", MUTE);
 
+        int firstErrorCount = firstErrors(s).size();
         y = 503;
         p.text(34, y + 22, 11, true, "COMPILATION RESULTS", BLUE);
         miniStat(p, 34, y - 25, "Attempts", s.compileAttempts);
         miniStat(p, 170, y - 25, "Successful", s.compileSucceeded);
         miniStat(p, 305, y - 25, "Failed", s.compileFailed);
-        miniStat(p, 440, y - 25, "First errors", s.compileErrors);
+        miniStat(p, 440, y - 25, "Total errors", s.compileErrors);
         p.text(34, y - 64, 9, false,
                 "Completed compile success rate: " + String.format(java.util.Locale.ROOT, "%.1f%%", s.compileSuccessRatePercent)
-                + "    |    First warnings: " + s.compileWarnings, MUTE);
+                + "    |    Warnings: " + s.compileWarnings
+                + "    |    First errors: " + firstErrorCount, MUTE);
 
         y = 404;
         p.text(34, y + 19, 11, true, "COMPILATION ERROR FREQUENCY  (DERIVED CATEGORIES)", BLUE);
@@ -75,7 +77,7 @@ public final class PdfReportWriter implements ReportWriter {
         p.text(34, 124, 9, false, outcomeLine(s.executionOutcomes), "0 0 0");
         p.text(34, 105, 9, false, "Estimated positive net words: " + s.estimatedNewWords +
                 "    |    Estimated words / active min: " + String.format(java.util.Locale.ROOT, "%.1f", s.estimatedWordsPerActiveMinute), MUTE);
-        p.text(34, 86, 8, false, "Console output, stack traces, same-length edits and exact inserted words are unavailable.", MUTE);
+        p.text(34, 86, 8, false, "Console output, stack traces and precise typing metrics are unavailable.", MUTE);
     }
 
     private void detail(Page p, SessionSnapshot s) {
@@ -108,7 +110,7 @@ public final class PdfReportWriter implements ReportWriter {
         p.text(40, 280, 8, true, "TIME UTC", BLUE);
         p.text(114, 280, 8, true, "FILE / LINE", BLUE);
         p.text(255, 280, 8, true, "ERROR CATEGORY + MESSAGE", BLUE);
-        List<TelemetryEvent> errors = s.events.stream().filter(e -> e.type().equals("COMPILE_ERROR")).toList();
+        List<TelemetryEvent> errors = firstErrors(s);
         y = 258;
         int count = 0;
         for (TelemetryEvent e : errors) {
@@ -123,7 +125,13 @@ public final class PdfReportWriter implements ReportWriter {
         }
         if (errors.isEmpty()) p.text(40, 256, 9, false, "No errors reported during observed user-triggered compilations.", MUTE);
         p.text(34, 64, 8, false,
-                "Error codes are derived categories; detailed source snippets and all diagnostics are not recorded.", MUTE);
+                "Error codes are derived categories; table shows first error per attempt while total counts and JSON include all observed diagnostics.", MUTE);
+    }
+
+    private static List<TelemetryEvent> firstErrors(SessionSnapshot s) {
+        return s.events.stream()
+                .filter(e -> e.type().equals("COMPILE_ERROR") && !Boolean.FALSE.equals(e.details().get("firstInAttempt")))
+                .toList();
     }
 
     private static String pretty(TelemetryEvent e) {
