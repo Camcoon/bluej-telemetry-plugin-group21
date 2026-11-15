@@ -7,8 +7,8 @@ import java.util.Map;
 public final class EventFactory {
     private EventFactory() { }
 
-    public static TelemetryEvent event(Instant when, String type, String project, String target,
-                                       Object... pairs) {
+    //Telementry Event Constructor
+    public static TelemetryEvent event(Instant when, String type, String project, String target, Object... pairs) {
         if (pairs.length % 2 != 0) throw new IllegalArgumentException("key/value pairs required");
         Map<String, Object> details = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
@@ -18,6 +18,7 @@ public final class EventFactory {
         return new TelemetryEvent(when, type, project, target, details);
     }
 
+    //Error message
     public static String errorCategory(String message) {
         String m = message == null ? "" : message.toLowerCase(java.util.Locale.ROOT);
         if (m.contains("cannot find symbol") || m.contains("cannot resolve symbol")) return "MISSING_SYMBOL";
