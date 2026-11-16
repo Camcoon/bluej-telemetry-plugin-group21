@@ -84,6 +84,8 @@ class TelemetryCoreTest {
         assertEquals(2, snap.compileWarnings);
         assertEquals(1, snap.firstCompileErrors);
         assertEquals(1, snap.firstCompileWarnings);
+        assertEquals(1, snap.compileErrors);
+        assertEquals(1, snap.compileWarnings);
         assertEquals(50, snap.compileSuccessRatePercent);
         assertEquals(1, snap.errorBreakdown.get("MISSING_SYMBOL").intValue());
         assertEquals(1, snap.executionOutcomes.get("NORMAL").intValue());
