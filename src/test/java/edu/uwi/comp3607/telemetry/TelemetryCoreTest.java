@@ -80,6 +80,10 @@ class TelemetryCoreTest {
         assertEquals(2, snap.compileAttempts);
         assertEquals(1, snap.compileSucceeded);
         assertEquals(1, snap.compileFailed);
+        assertEquals(2, snap.compileErrors);
+        assertEquals(2, snap.compileWarnings);
+        assertEquals(1, snap.firstCompileErrors);
+        assertEquals(1, snap.firstCompileWarnings);
         assertEquals(1, snap.compileErrors);
         assertEquals(1, snap.compileWarnings);
         assertEquals(50, snap.compileSuccessRatePercent);
@@ -123,6 +127,85 @@ class TelemetryCoreTest {
         assertTrue(json.contains("quoted \\\"value\\\""));
         assertTrue(json.contains("\"studentId\": null"));
         assertTrue(json.contains("\"totalCompilationAttempts\": 0"));
+    }
+
+    @Test void jsonParserRetainsIntegralNumbersAndAcceptsValidSchema() {
+        TelemetrySession session = new TelemetrySession("numeric-test", START);
+        session.openPackage("/tmp/numeric-test", "", List.of(), START);
+        session.compilationStarted("/tmp/numeric-test", "Num.java", after(1));
+        session.compilationProblem("/tmp/numeric-test", "Num.java", "';' expected", 2, false, after(2));
+        session.compilationFinished("/tmp/numeric-test", "Num.java", false, after(3));
+        SessionSnapshot snapshot = session.snapshot(after(4));
+        String json = new JsonReportWriter().toJson(snapshot);
+        Map<String, Object> parsed = JsonReportWriter.parseObject(json);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metadata = (Map<String, Object>) parsed.get("sessionMetadata");
+        assertInstanceOf(Long.class, metadata.get("totalDurationMillis"));
+        assertEquals(4000L, metadata.get("totalDurationMillis"));
+        JsonReportWriter.validateSchema(json, snapshot);
+    }
+
+    @Test void fingerprintDetectsSameLengthEditorChanges() {
+        TelemetrySession session = new TelemetrySession("editor-test", START);
+        session.openPackage("/tmp/editor-test", "", List.of("Editor"), START);
+        session.editorSample("/tmp/editor-test", "Editor", 3, 1, "cat".hashCode(), after(1));
+        session.editorSample("/tmp/editor-test", "Editor", 3, 1, "dog".hashCode(), after(31));
+        SessionSnapshot snapshot = session.snapshot(after(32));
+        assertEquals(1L, snapshot.events.stream()
+                .filter(e -> e.type().equals("EDITOR_CONTENT_CHANGED")).count());
+        assertEquals(1, snapshot.editsPerFiveMinuteWindow.get("0").intValue());
+    }
+
+    @Test void multiProjectSessionHasNoMisleadingSingleProjectPath() {
+        TelemetrySession session = new TelemetrySession("multi-project", START);
+        session.openPackage("/tmp/projectA", "", List.of(), START);
+        session.openPackage("/tmp/projectB", "", List.of(), after(1));
+        SessionSnapshot snapshot = session.snapshot(after(2));
+        assertNull(snapshot.projectPath);
+        assertEquals(2, snapshot.projectPaths.size());
+        JsonReportWriter.validateSchema(new JsonReportWriter().toJson(snapshot), snapshot);
+    }
+
+    @Test void orphanCompilationCallbacksRetainConsistentAttemptCounts() {
+        TelemetrySession orphan = new TelemetrySession("orphan", START);
+        orphan.compilationProblem("/tmp/orphan", "Orphan.java", "';' expected", 3, false, after(1));
+        orphan.compilationFinished("/tmp/orphan", "Orphan.java", false, after(2));
+        SessionSnapshot snapshot = orphan.snapshot(after(3));
+        assertEquals(1, snapshot.compileAttempts);
+        assertEquals(1, snapshot.compileFailed);
+        assertEquals(1, snapshot.compileErrors);
+        assertEquals(1, orphan.compilationHistory().size());
+        assertEquals("FAILED", orphan.compilationHistory().get(0).status());
+        JsonReportWriter.validateSchema(new JsonReportWriter().toJson(snapshot), snapshot);
+
+        TelemetrySession completionOnly = new TelemetrySession("completion", START);
+        completionOnly.compilationFinished("/tmp/orphan", "Orphan.java", true, after(1));
+        SessionSnapshot result = completionOnly.snapshot(after(2));
+        assertEquals(1, result.compileAttempts);
+        assertEquals(1, result.compileSucceeded);
+        JsonReportWriter.validateSchema(new JsonReportWriter().toJson(result), result);
+    }
+
+    @Test void sessionArchivePreservesTwoDifferentLaunches(@TempDir Path folder) throws Exception {
+        Path project = folder.resolve("DemoProject");
+        Files.createDirectories(project);
+        ExportService exporter = new ExportService(folder.resolve("backups"));
+
+        TelemetrySession first = new TelemetrySession("session-one", START);
+        first.openPackage(project.toString(), "", List.of(), START);
+        exporter.exportAll(first.snapshot(after(10)), project);
+
+        TelemetrySession second = new TelemetrySession("session-two", START);
+        second.openPackage(project.toString(), "", List.of(), START);
+        exporter.exportAll(second.snapshot(after(15)), project);
+
+        Path archiveRoot = project.resolve("Telemetry-Report/sessions");
+        try (var dirs = Files.list(archiveRoot)) {
+            assertEquals(2, dirs.filter(Files::isDirectory).count());
+        }
+        try (var files = Files.walk(archiveRoot)) {
+            assertEquals(4, files.filter(Files::isRegularFile).count());
+        }
     }
 
     @Test void exportersPlaceOutputsUnderProjectAndBackupsOutside(@TempDir Path folder) throws Exception {
