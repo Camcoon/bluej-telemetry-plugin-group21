@@ -35,15 +35,50 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * BlueJ extension entry point that observes editor, class, package, compilation
+ * and invocation activity and forwards it to a {@link TelemetryRuntime}.
+ *
+ * <p>On {@link #startup(BlueJ)} the extension registers listeners for all
+ * supported BlueJ events, installs an "Export Telemetry Report" menu item and
+ * starts a daemon timer that polls visible Java editors every 30 seconds.
+ * Word counts are sampled at most once every five minutes; other editor
+ * samples record text length and a content hash so that same-length edits can
+ * still be detected.</p>
+ *
+ * <p><strong>Thread-safety:</strong> BlueJ callbacks and editor polling run on
+ * the JavaFX application thread via {@link Platform#runLater(Runnable)}, while
+ * all session state lives behind {@link TelemetryRuntime#enqueue(java.util.function.Consumer)}.
+ * Every observer method therefore captures an immutable timestamp and forwards
+ * a short lambda rather than touching the session directly. BlueJ API calls may
+ * fail if a project closes concurrently; most are wrapped and logged so that a
+ * single stale event cannot break the extension.</p>
+ */
 public final class TelemetryExtension extends Extension implements PackageListener, ClassListener,
         CompileListener, InvocationFinishedListener {
+    /** The BlueJ instance this extension is attached to; {@code null} after termination. */
     private volatile BlueJ bluej;
+
+    /** Runtime that owns the session; created during startup. */
     private TelemetryRuntime runtime;
+
+    /** Timer used to schedule editor polling on the JavaFX thread. */
     private ScheduledExecutorService pollingTimer;
+
+    /** Cache mapping a package handle to its owning project directory. */
     private final Map<BPackage,String> projectForPackage = new ConcurrentHashMap<>();
+
+    /** Wall-clock timestamp of the last word-count sample. */
     private final AtomicLong lastWordSampleMillis = new AtomicLong(0);
+
+    /** Student id remembered between export dialogs. */
     private volatile String studentId;
 
+    /**
+     * Registers listeners, installs the export menu and starts editor polling.
+     *
+     * @param bluej the host BlueJ instance
+     */
     @Override public void startup(BlueJ bluej) {
         this.bluej = bluej;
         runtime = new TelemetryRuntime();
@@ -65,6 +100,10 @@ public final class TelemetryExtension extends Extension implements PackageListen
         catch (RuntimeException ex) { System.err.println("[telemetry] startup baseline unavailable: " + ex); }
     }
 
+    /**
+     * Registers every package that was already open when the extension loaded,
+     * so that pre-existing projects still produce baseline events.
+     */
     private void baselineAlreadyOpenPackages() {
         BlueJ bj = this.bluej;
         if (bj == null) return;
@@ -75,6 +114,13 @@ public final class TelemetryExtension extends Extension implements PackageListen
         } catch (Exception ex) { System.err.println("[telemetry] initial baseline: " + ex); }
     }
 
+    /**
+     * Resolves a package's project directory and records the package as opened,
+     * including a baseline of its class names.
+     *
+     * @param pkg the package to register; {@code null} is ignored
+     * @param at  the time of the observation
+     */
     private void registerPackage(BPackage pkg, Instant at) {
         if (pkg == null) return;
         try {
@@ -89,8 +135,18 @@ public final class TelemetryExtension extends Extension implements PackageListen
         } catch (Exception ex) { System.err.println("[telemetry] cannot register package: " + ex); }
     }
 
+    /**
+     * Handles a BlueJ package-open event.
+     *
+     * @param event the package event
+     */
     @Override public void packageOpened(PackageEvent event) { registerPackage(event.getPackage(), Instant.now()); }
 
+    /**
+     * Handles a BlueJ package-closing event, clearing the cached project mapping.
+     *
+     * @param event the package event
+     */
     @Override public void packageClosing(PackageEvent event) {
         BPackage pkg = event.getPackage();
         if (pkg == null) return;
@@ -101,6 +157,12 @@ public final class TelemetryExtension extends Extension implements PackageListen
         if (project != null) runtime.packageClosing(project, safePackageName(pkg), Instant.now());
     }
 
+    /**
+     * Handles class creation and modification events, sampling the declared
+     * method count only for compiled classes.
+     *
+     * @param event the class event
+     */
     @Override public void classStateChanged(ClassEvent event) {
         String project = projectOf(event.getPackage());
         if (project == null) return;
@@ -120,6 +182,11 @@ public final class TelemetryExtension extends Extension implements PackageListen
         runtime.enqueue(s -> s.classChanged(project, name, value, at));
     }
 
+    /**
+     * Handles a class rename event, carrying both names to the session.
+     *
+     * @param event the class event
+     */
     @Override public void classNameChanged(ClassEvent event) {
         String project = projectOf(event.getPackage());
         if (project == null) return;
@@ -131,6 +198,11 @@ public final class TelemetryExtension extends Extension implements PackageListen
         runtime.enqueue(s -> s.classRenamed(project, oldName, name, at));
     }
 
+    /**
+     * Handles a class deletion event.
+     *
+     * @param event the class event
+     */
     @Override public void classRemoved(ClassEvent event) {
         String project = projectOf(event.getPackage());
         if (project == null) return;
@@ -142,6 +214,12 @@ public final class TelemetryExtension extends Extension implements PackageListen
         runtime.enqueue(s -> s.classRemoved(project, name, at));
     }
 
+    /**
+     * Records the start of a user-triggered compilation; background compiler
+     * activity is deliberately ignored.
+     *
+     * @param ev the compile event
+     */
     @Override public void compileStarted(CompileEvent ev) {
         if (!ev.isUserGeneratedCompilation()) return;
         String project = projectOfFiles(ev.getFiles());
@@ -149,8 +227,19 @@ public final class TelemetryExtension extends Extension implements PackageListen
         String files = fileNames(ev.getFiles()); Instant at = Instant.now();
         runtime.enqueue(s -> s.compilationStarted(project, files, at));
     }
+
+    /** {@inheritDoc} */
     @Override public void compileSucceeded(CompileEvent ev) { finishCompile(ev, true); }
+
+    /** {@inheritDoc} */
     @Override public void compileFailed(CompileEvent ev) { finishCompile(ev, false); }
+
+    /**
+     * Forwards the outcome of a user-triggered compilation to the session.
+     *
+     * @param ev         the compile event
+     * @param successful whether the compilation succeeded
+     */
     private void finishCompile(CompileEvent ev, boolean successful) {
         if (!ev.isUserGeneratedCompilation()) return;
         String project = projectOfFiles(ev.getFiles());
@@ -158,8 +247,20 @@ public final class TelemetryExtension extends Extension implements PackageListen
         String files = fileNames(ev.getFiles()); Instant at = Instant.now();
         runtime.enqueue(s -> s.compilationFinished(project, files, successful, at));
     }
+
+    /** {@inheritDoc} */
     @Override public void compileError(CompileEvent ev) { compilationProblem(ev, false); }
+
+    /** {@inheritDoc} */
     @Override public void compileWarning(CompileEvent ev) { compilationProblem(ev, true); }
+
+    /**
+     * Forwards a compiler diagnostic to the session, retaining the raw message
+     * and line number so that categories can be derived later.
+     *
+     * @param ev      the compile event
+     * @param warning {@code true} for a warning, {@code false} for an error
+     */
     private void compilationProblem(CompileEvent ev, boolean warning) {
         if (!ev.isUserGeneratedCompilation()) return;
         String project = projectOfFiles(ev.getFiles());
@@ -169,6 +270,12 @@ public final class TelemetryExtension extends Extension implements PackageListen
         runtime.enqueue(s -> s.compilationProblem(project, file, message, line, warning, at));
     }
 
+    /**
+     * Handles method-invocation completion, mapping BlueJ event types to the
+     * normalized outcome names used by the report.
+     *
+     * @param event the invocation event
+     */
     @Override public void invocationFinished(InvocationFinishedEvent event) {
         String project = projectOf(event.getPackage());
         if (project == null) return;
@@ -183,6 +290,10 @@ public final class TelemetryExtension extends Extension implements PackageListen
         runtime.enqueue(s -> s.execution(project, className, method, outcome, at));
     }
 
+    /**
+     * Polls all visible Java editors on the JavaFX thread, sampling word counts
+     * every five minutes and capturing a content hash on every poll.
+     */
     private void pollVisibleJavaEditors() {
         if (bluej == null || runtime == null) return;
         long wallTime = System.currentTimeMillis();
@@ -216,14 +327,33 @@ public final class TelemetryExtension extends Extension implements PackageListen
             }
         } catch (Exception ex) { System.err.println("[telemetry] polling: " + ex); }
     }
+
+    /**
+     * Counts whitespace-separated words in editor text.
+     *
+     * @param text the editor content; may be {@code null} or blank
+     * @return the number of words, or zero for empty content
+     */
     private static int countWords(String text) {
         return text == null || text.isBlank() ? 0 : text.trim().split("\\s+").length;
     }
 
+    /**
+     * Converts a directory to an absolute, normalized path string.
+     *
+     * @param dir the directory; may be {@code null}
+     * @return the normalized path, or {@code null} if no directory was supplied
+     */
     private static String normalizeDir(File dir) {
         return dir == null ? null : dir.toPath().toAbsolutePath().normalize().toString();
     }
 
+    /**
+     * Returns the union of cached package project roots and currently open
+     * project roots, used as a fallback when an event's package is unavailable.
+     *
+     * @return the set of known absolute project directories
+     */
     private Set<String> knownProjectRoots() {
         Set<String> roots = new HashSet<>(projectForPackage.values());
         BlueJ bj = this.bluej;
@@ -240,6 +370,13 @@ public final class TelemetryExtension extends Extension implements PackageListen
         return roots;
     }
 
+    /**
+     * Determines which project a package belongs to, caching the answer. When
+     * the package is unknown, a unique open project is used as a fallback.
+     *
+     * @param pkg the package from a BlueJ event
+     * @return the normalized project directory, or {@code null} if ambiguous
+     */
     private String projectOf(BPackage pkg) {
         if (pkg != null) {
             String cached = projectForPackage.get(pkg);
@@ -256,6 +393,14 @@ public final class TelemetryExtension extends Extension implements PackageListen
         return openRoots.size() == 1 ? openRoots.iterator().next() : null;
     }
 
+    /**
+     * Infers the project for a set of files by choosing the longest known root
+     * path that is a parent of every matched file. Returns {@code null} when
+     * files span multiple projects so that events are not misattributed.
+     *
+     * @param files the files reported by a compilation event
+     * @return the normalized project directory, or {@code null} if ambiguous
+     */
     private String projectOfFiles(File[] files) {
         Set<String> roots = knownProjectRoots();
         if (roots.isEmpty()) return null;
@@ -289,16 +434,34 @@ public final class TelemetryExtension extends Extension implements PackageListen
         return roots.size() == 1 ? roots.iterator().next() : null;
     }
 
+    /**
+     * Joins the simple names of a file array into a comma-separated list.
+     *
+     * @param files the files; may be {@code null} or empty
+     * @return the joined names, or {@code null} if there are none
+     */
     private static String fileNames(File[] files) {
         if (files == null || files.length == 0) return null;
         List<String> names = new ArrayList<>();
         for (File file : files) if (file != null) names.add(file.getName());
         return String.join(", ", names);
     }
+
+    /**
+     * Reads a package name defensively for logging purposes.
+     *
+     * @param pkg the package handle
+     * @return the package name, or {@code "unknown"} on failure
+     */
     private static String safePackageName(BPackage pkg) {
         try { return pkg.getName(); } catch (Exception ex) { return "unknown"; }
     }
 
+    /**
+     * Prompts for a student id and triggers a full JSON and PDF export.
+     *
+     * @param pkg the package whose project should be exported
+     */
     private void manualExport(BPackage pkg) {
         String project = projectOf(pkg);
         if (project == null) {
@@ -318,15 +481,30 @@ public final class TelemetryExtension extends Extension implements PackageListen
         });
     }
 
+    /** Stops polling, finishes the runtime session and releases the BlueJ handle. */
     @Override public void terminate() {
         if (pollingTimer != null) pollingTimer.shutdownNow();
         if (runtime != null) runtime.terminate();
         bluej = null;
     }
+
+    /** {@inheritDoc} */
     @Override public boolean isCompatible() { return getExtensionsAPIVersionMajor() >= 3; }
+
+    /** {@inheritDoc} */
     @Override public String getName() { return "BlueJ Telemetry"; }
+
+    /** {@inheritDoc} */
     @Override public String getVersion() { return "1.0.3"; }
+
+    /** {@inheritDoc} */
     @Override public String getDescription() { return "Collect estimated editor activity and BlueJ lifecycle, compile and run events."; }
+
+    /**
+     * Returns the project page for this extension.
+     *
+     * @return the project URL, or {@code null} if the URL is malformed
+     */
     @Override public URL getURL() {
         try {
             return new URL("https://github.com/Camcoon/bluej-telemetry-plugin-group21");
@@ -335,9 +513,24 @@ public final class TelemetryExtension extends Extension implements PackageListen
         }
     }
 
+    /** Menu generator that wires the Tools menu item to the export action. */
     private static final class ExportMenu extends MenuGenerator {
+        /** Callback invoked with the package that was active when the menu was built. */
         private final java.util.function.Consumer<BPackage> action;
+
+        /**
+         * Creates the menu generator.
+         *
+         * @param action the export callback
+         */
         private ExportMenu(java.util.function.Consumer<BPackage> action) { this.action = action; }
+
+        /**
+         * Builds the export menu item.
+         *
+         * @param pkg the package associated with the menu
+         * @return the configured menu item
+         */
         @Override public MenuItem getToolsMenuItem(BPackage pkg) {
             MenuItem item = new MenuItem("Export Telemetry Report (JSON + PDF)");
             item.setOnAction(e -> action.accept(pkg));

@@ -14,12 +14,44 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Produces a fixed two-page PDF summary of a telemetry session.
+ *
+ * <p>The report is generated directly as a PDF 1.4 document using the two
+ * standard Helvetica fonts and a small set of drawing primitives; no external
+ * PDF library is required. Page one presents session timing, compilation and
+ * editor estimates, while page two shows a project/class/method timeline and
+ * the first errors observed in each compilation attempt. Derived or estimated
+ * values are labelled in the report itself.</p>
+ *
+ * <p><strong>Limitations:</strong> the layout is hard-coded for A4 pages, long
+ * text is truncated to fit columns, the timeline shows at most 15 events and
+ * the error table at most 8 rows (the JSON export contains everything). Text
+ * is rendered in ASCII so that stream lengths are exact and non-Latin
+ * characters are replaced with a dash. Console output and stack traces are
+ * not available from the BlueJ API.</p>
+ *
+ * <p>The class holds no mutable state, so instances are safe to reuse across
+ * threads.</p>
+ */
 public final class PdfReportWriter implements ReportWriter {
+    /** Page width and height in PDF points (A4 portrait). */
     private static final float W = 595, H = 842;
+
+    /** Accent colours used by the report, expressed as PDF RGB triplets. */
     private static final String BLUE = "0.10 0.28 0.50", CYAN = "0.08 0.57 0.67", MUTE = "0.35 0.43 0.52";
+
+    /** Formatter for timeline and error-table timestamps. */
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss")
             .withZone(ZoneOffset.UTC);
 
+    /**
+     * Renders the two report pages and writes the assembled PDF.
+     *
+     * @param s           the snapshot to render
+     * @param destination the file to create or replace
+     * @throws IOException if the PDF cannot be written
+     */
     @Override public void write(SessionSnapshot s, Path destination) throws IOException {
         Page one = new Page(), two = new Page();
         overview(one, s);
@@ -27,6 +59,13 @@ public final class PdfReportWriter implements ReportWriter {
         writePdf(destination, List.of(one.commands.toString(), two.commands.toString()));
     }
 
+    /**
+     * Draws the shared header, footer rule and page numbering on a page.
+     *
+     * @param p        the page to decorate
+     * @param subtitle the subtitle shown under the title band
+     * @param page     the one-based page number
+     */
     private void header(Page p, String subtitle, int page) {
         p.rect(0, H - 100, W, 100, BLUE);
         p.text(34, 789, 21, true, "BLUEJ TELEMETRY  /  SESSION REPORT", "1 1 1");
@@ -36,6 +75,13 @@ public final class PdfReportWriter implements ReportWriter {
         p.text(505, 25, 8, false, "Page " + page + " / 2", MUTE);
     }
 
+    /**
+     * Lays out the first page: session identity, time split, compilation
+     * statistics, error and edit histograms and execution outcomes.
+     *
+     * @param p the page to draw on
+     * @param s the snapshot to summarize
+     */
     private void overview(Page p, SessionSnapshot s) {
         header(p, "Overview  -  measured events and estimated editor activity", 1);
         p.text(34, 714, 11, true, "SESSION", BLUE);
@@ -62,8 +108,8 @@ public final class PdfReportWriter implements ReportWriter {
         miniStat(p, 440, y - 25, "Total errors", s.compileErrors);
         p.text(34, y - 64, 9, false,
                 "Completed compile success rate: " + String.format(java.util.Locale.ROOT, "%.1f%%", s.compileSuccessRatePercent)
-                + "    |    Warnings: " + s.compileWarnings
-                + "    |    First errors: " + firstErrorCount, MUTE);
+                        + "    |    Warnings: " + s.compileWarnings
+                        + "    |    First errors: " + firstErrorCount, MUTE);
 
         y = 404;
         p.text(34, y + 19, 11, true, "COMPILATION ERROR FREQUENCY  (DERIVED CATEGORIES)", BLUE);
@@ -80,6 +126,13 @@ public final class PdfReportWriter implements ReportWriter {
         p.text(34, 86, 8, false, "Console output, stack traces and precise typing metrics are unavailable.", MUTE);
     }
 
+    /**
+     * Lays out the second page: a chronological timeline of project, package,
+     * class and method events, followed by a table of first errors.
+     *
+     * @param p the page to draw on
+     * @param s the snapshot to summarize
+     */
     private void detail(Page p, SessionSnapshot s) {
         header(p, "Event timeline  -  observed project, class and compiled method-count activity", 2);
         p.text(34, 710, 11, true, "PROJECT / CLASS / METHOD TIMELINE", BLUE);
@@ -128,12 +181,26 @@ public final class PdfReportWriter implements ReportWriter {
                 "Error codes are derived categories; table shows first error per attempt while total counts and JSON include all observed diagnostics.", MUTE);
     }
 
+    /**
+     * Selects error events flagged as the first diagnostic of their attempt.
+     *
+     * @param s the snapshot to filter
+     * @return the first-error events in recording order
+     */
     private static List<TelemetryEvent> firstErrors(SessionSnapshot s) {
         return s.events.stream()
                 .filter(e -> e.type().equals("COMPILE_ERROR") && !Boolean.FALSE.equals(e.details().get("firstInAttempt")))
                 .toList();
     }
 
+    /**
+     * Formats a timeline event into a compact human-readable label, replacing
+     * project paths with their final path segment and rendering sampled method
+     * counts explicitly.
+     *
+     * @param e the event to format
+     * @return the display label
+     */
     private static String pretty(TelemetryEvent e) {
         String type = e.type().replace('_', ' ');
         String target = e.target() == null ? "" : e.target();
@@ -145,20 +212,60 @@ public final class PdfReportWriter implements ReportWriter {
         if (methods != null) return "METHODS SAMPLED  " + target + "  (declared: " + methods + ")";
         return type + "  " + target;
     }
+
+    /**
+     * Formats a duration in hours, minutes and seconds.
+     *
+     * @param millis the duration in milliseconds
+     * @return the formatted duration
+     */
     private static String duration(long millis) {
         long sec = millis / 1000;
         return (sec / 3600) + "h " + ((sec / 60) % 60) + "m " + (sec % 60) + "s";
     }
+
+    /**
+     * Formats execution outcome counts as a single text line.
+     *
+     * @param map the outcome counts
+     * @return the formatted summary line
+     */
     private static String outcomeLine(Map<String,Integer> map) {
         return "Normal: " + map.getOrDefault("NORMAL", 0) + "    Exception: " + map.getOrDefault("EXCEPTION", 0)
                 + "    Terminated: " + map.getOrDefault("TERMINATED", 0)
                 + "    Unknown: " + map.getOrDefault("UNKNOWN", 0);
     }
+
+    /**
+     * Draws one of the four compilation summary statistic cards.
+     *
+     * @param p      the page to draw on
+     * @param x      the left edge of the card
+     * @param y      the vertical anchor of the card
+     * @param label  the caption shown under the value
+     * @param amount the value to display
+     */
     private static void miniStat(Page p, float x, float y, String label, int amount) {
         p.rect(x, y - 12, 120, 42, "0.92 0.96 0.98");
         p.text(x + 9, y + 8, 18, true, Integer.toString(amount), BLUE);
         p.text(x + 9, y - 5, 8, false, label, MUTE);
     }
+
+    /**
+     * Draws a small horizontal bar chart for a map of counts.
+     *
+     * <p>Numeric keys used for edit windows are relabelled as five-minute
+     * ranges, at most {@code maxRows} rows are shown, and the longest bar is
+     * scaled to the available width.</p>
+     *
+     * @param p         the page to draw on
+     * @param data      the counts to chart
+     * @param x         the left edge of the chart
+     * @param top       the y-coordinate of the first row
+     * @param width     the total chart width
+     * @param lineHeight the vertical spacing between rows
+     * @param maxRows   the maximum number of rows to display
+     */
     private static void bars(Page p, Map<String,Integer> data, float x, float top,
                              float width, int lineHeight, int maxRows) {
         if (data.isEmpty()) { p.text(x, top - 2, 9, false, "No detected events in this category.", MUTE); return; }
@@ -177,26 +284,83 @@ public final class PdfReportWriter implements ReportWriter {
         }
         if (data.size() > maxRows) p.text(x, top - maxRows * lineHeight, 8, false, "+ more in JSON", MUTE);
     }
+
+    /**
+     * Truncates text to a fixed column width with an ellipsis.
+     *
+     * @param str    the text; may be {@code null}
+     * @param length the maximum length
+     * @return the original text or its truncated form
+     */
     private static String truncate(String str, int length) {
         if (str == null) return "";
         return str.length() > length ? str.substring(0, length - 3) + "..." : str;
     }
 
+    /**
+     * Accumulator for the drawing commands of a single PDF page.
+     *
+     * <p>Instances are private to one report and are used sequentially while
+     * laying out that page. Coordinates use the PDF convention with the origin
+     * at the bottom-left corner.</p>
+     */
     private static final class Page {
+        /** PDF content-stream operators accumulated in drawing order. */
         final StringBuilder commands = new StringBuilder();
+
+        /**
+         * Appends a text-showing operator using one of the embedded base fonts.
+         *
+         * @param x     the text x-coordinate
+         * @param y     the text baseline y-coordinate
+         * @param size  the font size
+         * @param bold  whether to use Helvetica-Bold
+         * @param value the text to show
+         * @param rgb   the fill colour as a PDF RGB triplet
+         */
         void text(float x, float y, int size, boolean bold, String value, String rgb) {
             commands.append(rgb).append(" rg BT /F").append(bold ? '2' : '1').append(' ')
                     .append(size).append(" Tf ").append(x).append(' ').append(y)
                     .append(" Td (").append(escaped(value)).append(") Tj ET\n");
         }
+
+        /**
+         * Appends a filled rectangle operator.
+         *
+         * @param x     the lower-left x-coordinate
+         * @param y     the lower-left y-coordinate
+         * @param w     the width
+         * @param h     the height
+         * @param color the fill colour as a PDF RGB triplet
+         */
         void rect(float x, float y, float w, float h, String color) {
             commands.append(color).append(" rg ").append(x).append(' ').append(y).append(' ')
                     .append(w).append(' ').append(h).append(" re f\n");
         }
+
+        /**
+         * Appends a stroked line operator.
+         *
+         * @param x     the start x-coordinate
+         * @param y     the start y-coordinate
+         * @param x2    the end x-coordinate
+         * @param y2    the end y-coordinate
+         * @param color the stroke colour as a PDF RGB triplet
+         * @param width the stroke width
+         */
         void line(float x, float y, float x2, float y2, String color, float width) {
             commands.append(color).append(" RG ").append(width).append(" w ").append(x).append(' ')
                     .append(y).append(" m ").append(x2).append(' ').append(y2).append(" l S\n");
         }
+
+        /**
+         * Appends a filled circle approximated by four cubic Bezier curves.
+         *
+         * @param x      the centre x-coordinate
+         * @param y      the centre y-coordinate
+         * @param radius the circle radius
+         * @param color  the fill colour as a PDF RGB triplet
+         */
         void circle(float x, float y, float radius, String color) {
             // Four cubic Beziers approximate a circular timeline marker.
             float k = radius * 0.55228475f;
@@ -210,6 +374,14 @@ public final class PdfReportWriter implements ReportWriter {
                     .append(x+k).append(' ').append(y-radius).append(' ').append(x+radius).append(' ').append(y-k)
                     .append(' ').append(x+radius).append(' ').append(y).append(" c f\n");
         }
+
+        /**
+         * Escapes parentheses and backslashes for PDF literal strings and
+         * replaces non-printable characters with a dash.
+         *
+         * @param text the raw text; may be {@code null}
+         * @return the escaped ASCII-safe text
+         */
         private static String escaped(String text) {
             if (text == null) return "";
             StringBuilder b = new StringBuilder();
@@ -221,6 +393,18 @@ public final class PdfReportWriter implements ReportWriter {
         }
     }
 
+    /**
+     * Assembles the PDF objects, cross-reference table and trailer for the two
+     * content streams and writes them to disk.
+     *
+     * <p>The document contains a catalog, a pages tree, two font resources,
+     * two page objects and their content streams. Byte offsets are recorded as
+     * each object is emitted so that the cross-reference table is correct.</p>
+     *
+     * @param path    the destination file
+     * @param content the content streams, one per page
+     * @throws IOException if the file cannot be written
+     */
     private static void writePdf(Path path, List<String> content) throws IOException {
         // PDF 1.4 with Helvetica fonts, two page objects and UTF-8-safe ASCII streams.
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -247,10 +431,25 @@ public final class PdfReportWriter implements ReportWriter {
         write(output, "trailer\n<< /Size " + (objects.size()+1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
         Files.write(path, output.toByteArray());
     }
+
+    /**
+     * Wraps drawing commands in a PDF stream object with an exact byte length.
+     *
+     * @param value the content-stream text
+     * @return the PDF stream object text
+     */
     private static String stream(String value) {
         byte[] bytes = value.getBytes(StandardCharsets.US_ASCII);
         return "<< /Length " + bytes.length + " >>\nstream\n" + value + "endstream";
     }
+
+    /**
+     * Appends an ASCII-encoded string to the PDF output buffer.
+     *
+     * @param out   the output buffer
+     * @param value the text to append
+     * @throws IOException if the buffer cannot be written
+     */
     private static void write(ByteArrayOutputStream out, String value) throws IOException {
         out.write(value.getBytes(StandardCharsets.US_ASCII));
     }
